@@ -65,8 +65,11 @@ void i2c_error ( struct i2c_nfc_device * this, const char* szMsg, int eno, int r
 
 void closedev ( struct i2c_nfc_device * this )
 {
-    if ( this->_fd>=0 )
-        close ( this->_fd );
+    if ( this->_fd<0 )
+        return;
+
+    close ( this->_fd );
+    this->_fd = -1;
 }
 
 void catch ( struct i2c_nfc_device * this )
@@ -80,18 +83,22 @@ void catch ( struct i2c_nfc_device * this )
     exit ( this->iRetCode );
 }
 
-void i2c_nfc_device ( struct i2c_nfc_device *this, const char * szBus, unsigned short address )
-{
-    this->_address = address;
-    this->iRetCode = 0;
+struct i2c_nfc_device make_i2c_nfc_device( const char *szBus, unsigned short address) {
+    struct i2c_nfc_device this;
+    this._address = address;
+    this.iRetCode = 0;
 #if !defined(XINFC_DUMMY_OUT)
     char bus_path[100];
     sprintf ( bus_path, "/dev/i2c-%s", szBus );
-    this->_fd = open ( bus_path, O_RDWR, 0 );
-    if ( this->_fd < 0)
-        i2c_error ( this, "failed to open i2c bus", errno, this->_fd );
-    catch(this);
+    this._fd = open ( bus_path, O_RDWR, 0 );
+    if ( this._fd < 0)
+        i2c_error ( &this, "failed to open i2c bus", errno, this._fd );
+    catch(&this);
+#else
+    this._fd = -1;
+    (void) szBus;
 #endif
+    return this;
 }
 
 void set_timeout( struct i2c_nfc_device * this, unsigned long timeout)
@@ -101,6 +108,9 @@ void set_timeout( struct i2c_nfc_device * this, unsigned long timeout)
     if (ioctl( this->_fd, I2C_TIMEOUT, timeout) < 0)
         i2c_error ( this, "failed to set i2c timeout", errno, this->_fd );
     catch ( this );
+#else
+    (void) this;
+    (void) timeout;
 #endif
 }
 
@@ -113,6 +123,9 @@ void set_retries ( struct i2c_nfc_device * this, unsigned long retries )
     if ( r<0 )
         i2c_error ( this, "failed to set i2c retries", errno, r );
     catch ( this );
+#else
+    (void) this;
+    (void) retries;
 #endif
 }
 
@@ -127,6 +140,8 @@ void set_device_address ( struct i2c_nfc_device * this )
     if ( r<0 )
         i2c_error ( this, "failed to set i2c device address", errno, r );
     catch ( this );
+#else
+    (void) this;
 #endif
 }
 
@@ -140,15 +155,21 @@ void read_ndef( struct i2c_nfc_device * this, unsigned char* out_buf, unsigned i
         return;
 
     if (out_buf == NULL)
-        return i2c_error ( this, "invalid ndef buffer", 0, 20 );
+    {
+        i2c_error ( this, "invalid ndef buffer", 0, 20 );
+        return;
+    }
 
     if ((size_4B_aligned % 4) != 0)
-        return i2c_error ( this, "invalid read alignment", 0, 20 );
+    {
+        i2c_error ( this, "invalid read alignment", 0, 20 );
+        return;
+    }
 
     if (size_4B_aligned > max_ndef_buf_size)
         size_4B_aligned = max_ndef_buf_size;
 
-    const unsigned int read_nmsgs = 2;
+    const int read_nmsgs = 2;
 
     struct i2c_msg msgs[2];
     struct i2c_rdwr_ioctl_data rdwr;
@@ -180,7 +201,10 @@ void read_ndef( struct i2c_nfc_device * this, unsigned char* out_buf, unsigned i
     const int r = ioctl( this->_fd, I2C_RDWR, &rdwr);
 
     if (r != read_nmsgs)
-        return i2c_error (this, "failed to read from i2c device", errno, r );
+    {
+        i2c_error (this, "failed to read from i2c device", errno, r );
+        return;
+    }
 #else
     print_rdwr(&rdwr);
 #endif
@@ -194,10 +218,16 @@ void write_ndef_at( struct i2c_nfc_device * this, const unsigned char* buf, unsi
         return;
 
     if (buf == NULL)
-        return i2c_error (this, "invalid ndef buffer", 0, 0 );
+    {
+        i2c_error (this, "invalid ndef buffer", 0, 0 );
+        return;
+    }
 
     if (size > max_ndef_buf_size)
-        return i2c_error (this, "invalid ndef buffer size", 0, 0 );
+    {
+        i2c_error (this, "invalid ndef buffer size", 0, 0 );
+        return;
+    }
 
     // Each write operation will only write 4 bytes of data
     const unsigned int write_nmsgs = ((size - 1) / 4) + 1;
@@ -241,7 +271,10 @@ void write_ndef_at( struct i2c_nfc_device * this, const unsigned char* buf, unsi
     const int r = ioctl(this->_fd, I2C_RDWR, &rdwr);
 
     if (r != (int)write_nmsgs)
-        return i2c_error (this, "failed to write to i2c device", errno, r );
+    {
+        i2c_error (this, "failed to write to i2c device", errno, r );
+        return;
+    }
 #else
     print_rdwr(&rdwr);
 #endif
@@ -257,11 +290,11 @@ void print_rdwr(const struct i2c_rdwr_ioctl_data* pRdwr)
 
         if ( rd )
         {
-            fprintf ( stderr, "read %d from 0x%02x to 0x%p\n", pMsg->len, pMsg->addr, pMsg->buf );
+            fprintf ( stderr, "read %d from 0x%02x to 0x%p\n", pMsg->len, pMsg->addr, (void*)pMsg->buf );
             return;
         }
 
-        fprintf ( stderr, "write %d to 0x%02x from 0x%p", pMsg->len, pMsg->addr, pMsg->buf );
+        fprintf ( stderr, "write %d to 0x%02x from 0x%p", pMsg->len, pMsg->addr, (void *)pMsg->buf );
         for (int j = 0; j < pMsg->len; ++j)
             fprintf ( stderr, " 0x%02x", pMsg->buf[j] );
 

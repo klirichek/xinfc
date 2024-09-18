@@ -97,8 +97,7 @@ int apply_config(
 {
     fprintf ( stderr, "Opening i2c bus %s...\n", szi2cbus );
 
-    struct i2c_nfc_device device;
-    i2c_nfc_device ( &device, szi2cbus, i2caddr );
+    __attribute__((cleanup(closedev))) struct i2c_nfc_device device = make_i2c_nfc_device(szi2cbus, i2caddr);
 
     fprintf ( stderr, "Setting i2c timeout...\n" );
     set_timeout ( &device, 3 );
@@ -130,7 +129,6 @@ int apply_config(
     {
         if (errno != EEXIST)
         {
-            closedev ( &device );
             fprintf ( stderr, "Cannot open %s! errno=%d\n", szbackup_filename, errno );
             return 11;
         }
@@ -149,7 +147,6 @@ int apply_config(
 
         if (written != to_write)
         {
-            closedev ( &device );
             fprintf ( stderr, "Cannot write to %s! errno=%d\n", szbackup_filename, eno );
             return 12;
         }
@@ -180,7 +177,7 @@ int apply_config(
         {
             const unsigned int s = min ( max_bytes, (unsigned int) size-i );
 
-            const int max_w_retries = 5;
+            const unsigned int max_w_retries = 5;
             unsigned int w_retries = 0;
 
             for (; w_retries <= max_w_retries; ++w_retries)
@@ -191,7 +188,6 @@ int apply_config(
 
                 if ( w_retries==max_w_retries )
                 {
-                    closedev ( &device );
                     fprintf ( stderr, "\n" );
                     exit ( device.iRetCode );
                 }
@@ -217,7 +213,7 @@ int apply_config(
 
             const unsigned int aligned_size = (((size - 1) / 4) + 1) * 4;
 
-            const int max_w_retries = 20;
+            const unsigned int max_w_retries = 20;
             unsigned int w_retries = 0;
 
             for (; w_retries <= max_w_retries; ++w_retries)
@@ -228,7 +224,6 @@ int apply_config(
 
                 if (w_retries == max_w_retries)
                 {
-                    closedev ( &device );
                     fprintf ( stderr, "\n" );
                     exit ( 20 );
                 }
@@ -248,7 +243,6 @@ int apply_config(
         fprintf ( stderr, "Data does not match! Retrying...\n" );
     }
 
-    closedev ( &device );
     if (retries == max_retries)
     {
         fprintf ( stderr, "Error: %s\n", "failed to write new NDEF data" );
