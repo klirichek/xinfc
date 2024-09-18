@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2024 Alexey N. Vinogradov <a.n.vinogradov@gmail.com>
  * Copyright (C) 2024 Caian Benedicto <caianbene@gmail.com>
  *
  * This file is part of xinfc.
@@ -34,7 +35,7 @@ void print_usage(const char*);
 
 int main(int argc, const char* argv[])
 {
-	fprintf ( stderr, "xinfc version %s\n", XINFC_VERSION );
+    fprintf ( stderr, "xinfc version %s\n", XINFC_VERSION );
 
     if (argc != 6)
     {
@@ -48,43 +49,41 @@ int main(int argc, const char* argv[])
     const char* szPass = argv[4];
     const char* szMode = argv[5];
 
-	if ( strlen ( szi2cbus )!=1 )
+    if ( strlen ( szi2cbus )!=1 )
     {
-		fprintf ( stderr, "Error: Invalid i2c bus parameter!\n" );
+        fprintf ( stderr, "Error: Invalid i2c bus parameter!\n" );
         exit(1);
     }
 
     const int i2caddr = parse_i2c_address(i2caddr_s);
-	fprintf ( stderr, "I2c device address is %d.\n", i2caddr );
+    fprintf ( stderr, "I2c device address is %d.\n", i2caddr );
     if (i2caddr <= 0)
-    {
         exit(2);
-    }
 
-	const unsigned int ssid_size = strlen( szSsid );
+    const unsigned int ssid_size = strlen( szSsid );
 
     if ( ssid_size < ssid_min || ssid_size > ssid_max)
     {
-		fprintf ( stderr, "Error: ssid must have between %d and %d characters!\n", ssid_min, ssid_max );
+        fprintf ( stderr, "Error: ssid must have between %d and %d characters!\n", ssid_min, ssid_max );
         exit(3);
     }
 
-	const unsigned int pass_size = strlen ( szPass );
+    const unsigned int pass_size = strlen ( szPass );
 
     if ( pass_size < pass_min || pass_size > pass_max)
     {
-		fprintf ( stderr, "Error: password must have between %d and %d characters!\n", pass_min, pass_max );
+        fprintf ( stderr, "Error: password must have between %d and %d characters!\n", pass_min, pass_max );
         exit(4);
     }
 
     enum wifi_crypt crypt;
     enum wifi_auth auth;
 
-	if ( select_encryption_mode ( szMode, &crypt, &auth )!=0 )
-		exit ( 5 );
+    if ( select_encryption_mode ( szMode, &crypt, &auth )!=0 )
+        exit ( 5 );
 
-	int r = apply_config ( szi2cbus, i2caddr, szSsid, szPass, crypt, auth );
-	return r;
+    int r = apply_config ( szi2cbus, i2caddr, szSsid, szPass, crypt, auth );
+    return r;
 }
 
 int apply_config(
@@ -96,24 +95,20 @@ int apply_config(
     enum wifi_auth auth
 )
 {
-	fprintf ( stderr, "Opening i2c bus %s...\n", szi2cbus );
+    fprintf ( stderr, "Opening i2c bus %s...\n", szi2cbus );
 
-	struct i2c_nfc_device device;
-	i2c_nfc_device ( &device, szi2cbus, i2caddr );
+    struct i2c_nfc_device device;
+    i2c_nfc_device ( &device, szi2cbus, i2caddr );
 
-	fprintf ( stderr, "Setting i2c timeout...\n" );
+    fprintf ( stderr, "Setting i2c timeout...\n" );
+    set_timeout ( &device, 3 );
 
-	set_timeout ( &device, 3 );
+    fprintf ( stderr, "Setting i2c retries...\n" );
+    set_retries ( &device, 2 );
 
-	fprintf ( stderr, "Setting i2c retries...\n" );
-
-	set_retries ( &device, 2 );
-
-	fprintf ( stderr, "Setting i2c device address %d...\n", i2caddr );
-
+    fprintf ( stderr, "Setting i2c device address %d...\n", i2caddr );
     set_device_address( &device );
-
-	fprintf ( stderr, "I2c device address set.\n" );
+    fprintf ( stderr, "I2c device address set.\n" );
 
     ///////////////////////////////////////////////////////
 
@@ -122,12 +117,12 @@ int apply_config(
     unsigned char ndef_rbuf[max_ndef_buf_size];
     unsigned char ndef_wbuf[max_ndef_buf_size];
 
-	fprintf ( stderr, "Reading existing NDEF data...\n" );
+    fprintf ( stderr, "Reading existing NDEF data...\n" );
 
-	read_ndef ( &device, ndef_rbuf, sizeof ( ndef_rbuf ) );
-	catch ( &device );
+    read_ndef ( &device, ndef_rbuf, sizeof ( ndef_rbuf ) );
+    catch ( &device );
 
-	fprintf ( stderr, "Read %d bytes.\n", (int)sizeof ( ndef_rbuf ));
+    fprintf ( stderr, "Read %d bytes.\n", (int)sizeof ( ndef_rbuf ));
 
     const int backup_fd = open( szbackup_filename, O_EXCL | O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 
@@ -135,40 +130,40 @@ int apply_config(
     {
         if (errno != EEXIST)
         {
-			closedev ( &device );
-			fprintf ( stderr, "Cannot open %s! errno=%d\n", szbackup_filename, errno );
+            closedev ( &device );
+            fprintf ( stderr, "Cannot open %s! errno=%d\n", szbackup_filename, errno );
             return 11;
         }
 
-		fprintf ( stderr, "Backup file found. Skipping backup...\n" );
+        fprintf ( stderr, "Backup file found. Skipping backup...\n" );
     }
     else
     {
-		fprintf ( stderr, "Stock chip data backup not found. Backing up...\n" );
+        fprintf ( stderr, "Stock chip data backup not found. Backing up...\n" );
 
-        const long to_write = sizeof(ndef_rbuf);
-        const long written = write(backup_fd, ndef_rbuf, sizeof(ndef_rbuf));
+        const size_t to_write = sizeof(ndef_rbuf);
+        const size_t written = write(backup_fd, ndef_rbuf, sizeof(ndef_rbuf));
         const int eno = errno;
 
         close(backup_fd);
 
         if (written != to_write)
         {
-			closedev ( &device );
-			fprintf ( stderr, "Cannot write to %s! errno=%d\n", szbackup_filename, eno );
+            closedev ( &device );
+            fprintf ( stderr, "Cannot write to %s! errno=%d\n", szbackup_filename, eno );
             return 12;
         }
 
-		fprintf ( stderr, "Backup complete.\n" );
+        fprintf ( stderr, "Backup complete.\n" );
     }
 
     ////////////////////////////////////////////////////////////////
 
-	fprintf ( stderr, "Building new NDEF data...\n" );
+    fprintf ( stderr, "Building new NDEF data...\n" );
 
     const unsigned int size = make_wsc_ndef(szSsid, szPass, crypt, auth, ndef_wbuf, (unsigned int)sizeof(ndef_wbuf));
 
-	fprintf ( stderr, "New NDEF is %d bytes.\n", size );
+    fprintf ( stderr, "New NDEF is %d bytes.\n", size );
 
     ////////////////////////////////////////////////////////////////
 
@@ -177,45 +172,45 @@ int apply_config(
 
     for (; retries < max_retries; ++retries)
     {
-		fprintf ( stderr, "Writing new NDEF data...\n" );
+        fprintf ( stderr, "Writing new NDEF data...\n" );
 
         const unsigned int max_bytes = 4;
 
         for (unsigned int i = 0; i < size; i += max_bytes)
         {
-			const unsigned int s = min ( max_bytes, (unsigned int) size-i );
+            const unsigned int s = min ( max_bytes, (unsigned int) size-i );
 
             const int max_w_retries = 5;
             unsigned int w_retries = 0;
 
             for (; w_retries <= max_w_retries; ++w_retries)
             {
-				write_ndef_at(&device, ndef_wbuf + i, s, i);
-				if ( device.iRetCode==0 )
-					break;
+                write_ndef_at(&device, ndef_wbuf + i, s, i);
+                if ( device.iRetCode==0 )
+                    break;
 
-				if ( w_retries==max_w_retries )
-				{
-					closedev ( &device );
-					fprintf ( stderr, "\n" );
-					exit ( device.iRetCode );
-				}
+                if ( w_retries==max_w_retries )
+                {
+                    closedev ( &device );
+                    fprintf ( stderr, "\n" );
+                    exit ( device.iRetCode );
+                }
 
-				fprintf ( stderr, "x" );
+                fprintf ( stderr, "x" );
 
-				// The i2c line / device sometimes hang
-				// TODO tune timeout/retries ioctl?
-				usleep ( 20000 );
+                // The i2c line / device sometimes hang
+                // TODO tune timeout/retries ioctl?
+                usleep ( 20000 );
             }
 
-			fprintf ( stderr, "." );
+            fprintf ( stderr, "." );
         }
 
-		fprintf ( stderr, "\n" );
+        fprintf ( stderr, "\n" );
 
         usleep(1000000);
 
-		fprintf ( stderr, "Verifying written NDEF data...\n" );
+        fprintf ( stderr, "Verifying written NDEF data...\n" );
 
         {
             memset(ndef_rbuf, 0, size);
@@ -227,37 +222,37 @@ int apply_config(
 
             for (; w_retries <= max_w_retries; ++w_retries)
             {
-				read_ndef ( &device, ndef_rbuf, aligned_size );
-				if ( device.iRetCode==0 )
-					break;
+                read_ndef ( &device, ndef_rbuf, aligned_size );
+                if ( device.iRetCode==0 )
+                    break;
 
-				if (w_retries == max_w_retries)
-				{
-					closedev ( &device );
-					fprintf ( stderr, "\n" );
-					exit ( 20 );
-				}
+                if (w_retries == max_w_retries)
+                {
+                    closedev ( &device );
+                    fprintf ( stderr, "\n" );
+                    exit ( 20 );
+                }
 
-				// The i2c line / device sometimes hang
-				// TODO tune timeout/retries ioctl?
-				usleep(40000);
+                // The i2c line / device sometimes hang
+                // TODO tune timeout/retries ioctl?
+                usleep(40000);
             }
 
-			if ( memcmp ( ndef_wbuf, ndef_rbuf, size )==0 )
+            if ( memcmp ( ndef_wbuf, ndef_rbuf, size )==0 )
             {
-				fprintf ( stderr, "Success.\n" );
+                fprintf ( stderr, "Success.\n" );
                 break;
             }
         }
 
-		fprintf ( stderr, "Data does not match! Retrying...\n" );
+        fprintf ( stderr, "Data does not match! Retrying...\n" );
     }
 
-	closedev ( &device );
+    closedev ( &device );
     if (retries == max_retries)
     {
-		fprintf ( stderr, "Error: %s\n", "failed to write new NDEF data" );
-		exit(20);
+        fprintf ( stderr, "Error: %s\n", "failed to write new NDEF data" );
+        exit(20);
     }
     return 0;
 }
@@ -266,20 +261,20 @@ unsigned int make_wsc_ndef(
     const char * ssid,
     const char * pass,
     enum wifi_crypt crypt,
-	enum wifi_auth auth,
+    enum wifi_auth auth,
     unsigned char* buf,
-	unsigned int max_size
+    unsigned int max_size
 )
 {
     const char ndef_app[] = "application/vnd.wfa.wsc";
 
-	unsigned int ssid_size = strlen (ssid);
-	unsigned int pass_size = strlen (pass);
+    size_t ssid_size = strlen (ssid);
+    size_t pass_size = strlen (pass);
 
-	if ( 69+ssid_size+pass_size>max_size )
+    if ( 69+ssid_size+pass_size>max_size )
         return 0;
 
-    const int payload_len = 35 + ssid_size + pass_size;
+    const size_t payload_len = 35 + ssid_size + pass_size;
 
     int i = 0;
 
@@ -333,7 +328,7 @@ int parse_i2c_address(const char* szAddr)
 {
     if (strlen(szAddr) != 4 || szAddr[0] != '0' || ( szAddr[1] != 'x' && szAddr[1] != 'X'))
     {
-		fprintf ( stderr, "Error: Invalid i2c device!\n" );
+        fprintf ( stderr, "Error: Invalid i2c device!\n" );
         return -1;
     }
 
@@ -348,7 +343,7 @@ int parse_i2c_address(const char* szAddr)
         else if (c >= 'A' && c <= 'F') c = c - (int)'A' + 10;
         else
         {
-			fprintf ( stderr, "Error: Invalid i2c device!\n" );
+            fprintf ( stderr, "Error: Invalid i2c device!\n" );
             return -2;
         }
 
@@ -361,17 +356,17 @@ int parse_i2c_address(const char* szAddr)
 
 int select_encryption_mode ( const char * szMode, enum wifi_crypt * out_crypt, enum wifi_auth * out_auth )
 {
-	for ( struct wifi_modes * pMode = g_dModes; pMode->szName; ++pMode )
-		if ( strcmp ( szMode, pMode->szName )==0 )
-		{
-			if ( pMode->szMsg )
-				fprintf ( stderr, "%s: %s!\n", ( pMode->iValid==0 ) ? "Warning" : "Error", pMode->szMsg );
-			if ( pMode->iValid!=0 )
-				return -1;
-			*out_crypt = pMode->tCrypt;
-			*out_auth = pMode->tAuth;
-			return 0;
-		}
+    for ( struct wifi_modes * pMode = g_dModes; pMode->szName; ++pMode )
+        if ( strcmp ( szMode, pMode->szName )==0 )
+        {
+            if ( pMode->szMsg )
+                fprintf ( stderr, "%s: %s!\n", ( pMode->iValid==0 ) ? "Warning" : "Error", pMode->szMsg );
+            if ( pMode->iValid!=0 )
+                return -1;
+            *out_crypt = pMode->tCrypt;
+            *out_auth = pMode->tAuth;
+            return 0;
+        }
 
     fprintf ( stderr, "Error: unknown encryption mode!\n");
     return -1;
@@ -379,13 +374,13 @@ int select_encryption_mode ( const char * szMode, enum wifi_crypt * out_crypt, e
 
 void print_usage(const char* szName)
 {
-	fprintf ( stderr,"USAGE: %s i2c-bus i2c-device ssid password mode\n"
-        "  i2c-device must be a hex byte in the format 0xMN\n"
-        "  ssid must have between %d and %d characters\n"
-        "  password must have between %d and %d characters.\n"
-        "  mode must be one of the following:\n", szName, ssid_min, ssid_max, pass_min, pass_max );
+    fprintf ( stderr,"USAGE: %s i2c-bus i2c-device ssid password mode\n"
+    "  i2c-device must be a hex byte in the format 0xMN\n"
+    "  ssid must have between %d and %d characters\n"
+    "  password must have between %d and %d characters.\n"
+    "  mode must be one of the following:\n", szName, ssid_min, ssid_max, pass_min, pass_max );
 
-	for ( struct wifi_modes * pMode = g_dModes; pMode->szName; ++pMode )
-		if ( pMode->iValid==0 )
-			fprintf ( stderr, "    %s\n", pMode->szName );
+    for ( struct wifi_modes * pMode = g_dModes; pMode->szName; ++pMode )
+        if ( pMode->iValid==0 )
+            fprintf ( stderr, "    %s\n", pMode->szName );
 }
