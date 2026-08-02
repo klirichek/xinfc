@@ -83,3 +83,61 @@ So far I tested this on my AX3000T:
 I used two needles commonly used to clean 3D printer nozzles and probed the SCL/SDA pins directly. Then I connected a cheap logic analyzer to them. This shows how the router talks to the chip.
 
 Contributions are welcome :)
+
+## Optional URI record
+
+`xinfc-wsc` accepts an optional sixth argument. When present, a second NDEF
+record — an NFC Forum URI record — is appended after the Wi-Fi Simple
+Configuration record.
+
+```
+xinfc-wsc <i2c bus> <nfc chip i2c address> <ssid> <password> <mode> [uri]
+```
+
+```sh
+# Wi-Fi record only (unchanged behaviour)
+xinfc-wsc 0 0x57 MyNetwork hunter2000 psk2
+
+# Wi-Fi record + URI record
+xinfc-wsc 0 0x57 MyNetwork hunter2000 psk2 https://example.com/wifi
+```
+
+### Why
+
+Android acts on the WSC record and offers to join the network with a single
+tap. iOS does not: Apple has never wired `application/vnd.wfa.wsc` into the
+background tag handler, so an iPhone tapping a Wi-Fi-only tag does nothing.
+
+iOS *does* act on URI records. Adding one gives iPhone users a landing page —
+for example one that copies the password to the clipboard, or serves a
+`.mobileconfig` profile — while leaving the Android path untouched.
+
+### Record order
+
+The WSC record is written first and the URI record second. Both platforms
+were verified against a Xiaomi AX3000T (Fudan NT082C chip):
+
+| Platform | Behaviour |
+| --- | --- |
+| Android | Offers to join the network, as before |
+| iOS | Opens the URI in the default browser |
+
+Putting the URI record first would hand iOS the same result but costs Android
+its Wi-Fi prompt, so the order matters.
+
+### URI prefix compression
+
+NFC Forum URI records encode a well-known scheme as a single byte. `https://`
+and `http://` are recognised and compressed; anything else is stored verbatim
+with prefix code `0x00`.
+
+Only `http` and `https` are useful in practice. iOS ignores other schemes in
+the background handler — `WIFI:S:…;T:WPA;P:…;;` and `data:text/plain,…` both
+produce "no usable data" rather than opening anything.
+
+### Size
+
+The chip on the AX3000T holds 160 bytes of NDEF. A typical Wi-Fi record is
+around 90 bytes, and a URI record costs 5 bytes plus the URI itself after
+prefix compression. Keep the URI short; `xinfc-wsc` refuses to write and
+returns 0 if the message would overflow the buffer.

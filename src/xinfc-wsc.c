@@ -29,15 +29,15 @@
 
 int parse_i2c_address(const char*);
 int select_encryption_mode(const char*, enum wifi_crypt*, enum wifi_auth*);
-int apply_config(const char*, int, const char*, const char*, enum wifi_crypt, enum wifi_auth);
-unsigned int make_wsc_ndef(const char*, const char*, enum wifi_crypt, enum wifi_auth, unsigned char*, unsigned int);
+int apply_config(const char*, int, const char*, const char*, enum wifi_crypt, enum wifi_auth, const char*);
+unsigned int make_wsc_ndef(const char*, const char*, enum wifi_crypt, enum wifi_auth, const char*, unsigned char*, unsigned int);
 void print_usage(const char*);
 
 int main(int argc, const char* argv[])
 {
     fprintf ( stderr, "xinfc version %s\n", XINFC_VERSION );
 
-    if (argc != 6)
+    if (argc != 6 && argc != 7)
     {
         print_usage( argv[0]);
         exit(1);
@@ -48,6 +48,7 @@ int main(int argc, const char* argv[])
     const char* szSsid = argv[3];
     const char* szPass = argv[4];
     const char* szMode = argv[5];
+    const char* szUri  = (argc == 7) ? argv[6] : NULL;
 
     if ( strlen ( szi2cbus )!=1 )
     {
@@ -82,7 +83,7 @@ int main(int argc, const char* argv[])
     if ( select_encryption_mode ( szMode, &crypt, &auth )!=0 )
         exit ( 5 );
 
-    int r = apply_config ( szi2cbus, i2caddr, szSsid, szPass, crypt, auth );
+    int r = apply_config ( szi2cbus, i2caddr, szSsid, szPass, crypt, auth, szUri );
     return r;
 }
 
@@ -92,7 +93,8 @@ int apply_config(
     const char * szSsid,
     const char * szPass,
     enum wifi_crypt crypt,
-    enum wifi_auth auth
+    enum wifi_auth auth,
+    const char * szUri
 )
 {
     fprintf ( stderr, "Opening i2c bus %s...\n", szi2cbus );
@@ -158,7 +160,7 @@ int apply_config(
 
     fprintf ( stderr, "Building new NDEF data...\n" );
 
-    const unsigned int size = make_wsc_ndef(szSsid, szPass, crypt, auth, ndef_wbuf, (unsigned int)sizeof(ndef_wbuf));
+    const unsigned int size = make_wsc_ndef(szSsid, szPass, crypt, auth, szUri, ndef_wbuf, (unsigned int)sizeof(ndef_wbuf));
 
     fprintf ( stderr, "New NDEF is %d bytes.\n", size );
 
@@ -256,16 +258,28 @@ unsigned int make_wsc_ndef(
     const char * pass,
     enum wifi_crypt crypt,
     enum wifi_auth auth,
+    const char * uri,
     unsigned char* buf,
     unsigned int max_size
 )
 {
     const char ndef_app[] = "application/vnd.wfa.wsc";
 
+    /* Optional URI record. Recognised prefixes are compressed to one byte. */
+    const char* uri_body = uri;
+    unsigned char uri_prefix = 0x00;
+    if ( uri )
+    {
+        if      ( strncmp(uri, "https://", 8)==0 ) { uri_prefix = 0x04; uri_body = uri + 8; }
+        else if ( strncmp(uri, "http://",  7)==0 ) { uri_prefix = 0x03; uri_body = uri + 7; }
+    }
+    const size_t uri_len     = uri ? strlen(uri_body) : 0;
+    const size_t uri_rec_len = uri ? 5 + uri_len : 0;
+
     size_t ssid_size = strlen (ssid);
     size_t pass_size = strlen (pass);
 
-    if ( 69+ssid_size+pass_size>max_size )
+    if ( 69+ssid_size+pass_size+uri_rec_len>max_size )
         return 0;
 
     const size_t payload_len = 35 + ssid_size + pass_size;
@@ -273,8 +287,8 @@ unsigned int make_wsc_ndef(
     int i = 0;
 
     buf[i++] = 0x03;
-    buf[i++] = 30 + payload_len;
-    buf[i++] = 0xd2; buf[i++] = 0x17;
+    buf[i++] = 30 + payload_len + uri_rec_len;
+    buf[i++] = uri ? 0x92 : 0xd2; buf[i++] = 0x17;
     buf[i++] = 4 + payload_len;
 
     for (unsigned int j = 0; j < sizeof(ndef_app) - 1; j++)
@@ -313,6 +327,19 @@ unsigned int make_wsc_ndef(
     buf[i++] = 0xFF; buf[i++] = 0xFF;     // mac address
     buf[i++] = 0xFF; buf[i++] = 0xFF;     // mac address
     buf[i++] = 0xFF; buf[i++] = 0xFF;     // mac address
+
+    if ( uri )
+    {
+        buf[i++] = 0x51;                  // ME=1, SR=1, TNF=well-known
+        buf[i++] = 0x01;                  // type length
+        buf[i++] = 1 + uri_len;           // payload length
+        buf[i++] = 'U';                   // type = URI
+        buf[i++] = uri_prefix;            // URI prefix code
+
+        for (size_t j = 0; j < uri_len; ++j)
+            buf[i++] = uri_body[j];
+    }
+
     buf[i++] = 0xFE;
 
     return i;
@@ -368,10 +395,11 @@ int select_encryption_mode ( const char * szMode, enum wifi_crypt * out_crypt, e
 
 void print_usage(const char* szName)
 {
-    fprintf ( stderr,"USAGE: %s i2c-bus i2c-device ssid password mode\n"
+    fprintf ( stderr,"USAGE: %s i2c-bus i2c-device ssid password mode [uri]\n"
     "  i2c-device must be a hex byte in the format 0xMN\n"
     "  ssid must have between %d and %d characters\n"
     "  password must have between %d and %d characters.\n"
+    "  uri is optional; if given, an extra NDEF URI record is added\n"
     "  mode must be one of the following:\n", szName, ssid_min, ssid_max, pass_min, pass_max );
 
     for ( struct wifi_modes * pMode = g_dModes; pMode->szName; ++pMode )
